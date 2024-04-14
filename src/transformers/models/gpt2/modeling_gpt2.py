@@ -1174,7 +1174,7 @@ class GPT2Model(GPT2PreTrainedModel):
         # ====================================== twiker ====================================== #
         twiker_kernel_all_layers = None
         if self.twiker_activated:
-            twiker_kernel_all_layers = self.twiker_model.embedding(input_ids)
+            twiker_kernel_all_layers = self.twiker_model.get_kernel(input_ids)
         # ====================================== twiker ====================================== #
 
         presents = () if use_cache else None
