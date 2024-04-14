@@ -112,6 +112,18 @@ class GPT2Config(PretrainedConfig):
             Whether to scale keys (K) prior to computing attention (dot-product) and upcast attention
             dot-product/softmax to float() when training with mixed precision.
 
+        twiker_activated (`bool`, *optional*, defaults to `False`):
+            Whether to activate TWIKER
+        twiker_kernel_size (`int`, *optional*, defaults to `3`):
+            Kernel size of TWIKER
+        twiker_sum_to_one (`bool`, *optional*, defaults to `False`):
+            Whether to make TWIKER sum to one
+        twiker_head_invariant (`bool`, *optional*, defaults to `True`):
+            Whether TWIKER is head-invariant
+        twiker_layer_invariant (`bool`, *optional*, defaults to `True`):
+            Whether TWIKER is layer-invariant
+        twiker_strict_on_casual (`bool`, *optional*, defaults to `True`):
+            Whether TWIKER is strict on casual
     Example:
 
     ```python
@@ -161,6 +173,12 @@ class GPT2Config(PretrainedConfig):
         eos_token_id=50256,
         scale_attn_by_inverse_layer_idx=False,
         reorder_and_upcast_attn=False,
+        twiker_activated=False,
+        twiker_kernel_size=3,
+        twiker_sum_to_one=False,
+        twiker_head_invariant=True,
+        twiker_layer_invariant=True,
+        twiker_strict_on_casual=True,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -187,6 +205,14 @@ class GPT2Config(PretrainedConfig):
 
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
+
+        # twiker
+        self.twiker_activated = twiker_activated
+        self.twiker_kernel_size = twiker_kernel_size
+        self.twiker_sum_to_one = twiker_sum_to_one
+        self.twiker_head_invariant = twiker_head_invariant
+        self.twiker_layer_invariant = twiker_layer_invariant
+        self.twiker_strict_on_casual = twiker_strict_on_casual
 
         super().__init__(bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs)
 
