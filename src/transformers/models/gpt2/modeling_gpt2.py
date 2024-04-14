@@ -56,6 +56,7 @@ if is_flash_attn_2_available():
     from flash_attn import flash_attn_func, flash_attn_varlen_func
     from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
 
+from ..twiker.twiker import TwikerModel
 
 logger = logging.get_logger(__name__)
 
@@ -195,8 +196,16 @@ class GPT2Attention(nn.Module):
         self.num_heads = self.num_heads - len(heads)
         self.pruned_heads = self.pruned_heads.union(heads)
 
-    def _attn(self, query, key, value, attention_mask=None, head_mask=None):
+    def _attn(self, query, key, value, attention_mask=None, head_mask=None,
+              twiker_casual_boundary_keys_values=None):
         attn_weights = torch.matmul(query, key.transpose(-1, -2))
+
+        # ====================================== twiker ====================================== #
+        if twiker_casual_boundary_keys_values is not None:
+            attn_weights = TwikerModel.correct_attn_weights_near_casual_boundary(
+                attn_weights=attn_weights, query=query, key=key,
+                casual_boundary_keys=twiker_casual_boundary_keys_values[0])
+        # ====================================== twiker ====================================== #
 
         if self.scale_attn_weights:
             attn_weights = attn_weights / torch.full(
@@ -233,9 +242,17 @@ class GPT2Attention(nn.Module):
 
         attn_output = torch.matmul(attn_weights, value)
 
+        # ====================================== twiker ====================================== #
+        if twiker_casual_boundary_keys_values is not None:
+            attn_output = TwikerModel.correct_attn_output_near_casual_boundary(
+                attn_output=attn_output, attn_weights=attn_weights, value=value,
+                casual_boundary_values=twiker_casual_boundary_keys_values[1])
+        # ====================================== twiker ====================================== #
+
         return attn_output, attn_weights
 
-    def _upcast_and_reordered_attn(self, query, key, value, attention_mask=None, head_mask=None):
+    def _upcast_and_reordered_attn(self, query, key, value, attention_mask=None, head_mask=None,
+                                   twiker_casual_boundary_keys_values=None):
         # Use `torch.baddbmm` (a bit more efficient w/ alpha param for scaling -- from Megatron-LM)
         bsz, num_heads, q_seq_len, dk = query.size()
         _, _, k_seq_len, _ = key.size()
@@ -256,6 +273,13 @@ class GPT2Attention(nn.Module):
             q, k = query.reshape(-1, q_seq_len, dk), key.transpose(-1, -2).reshape(-1, dk, k_seq_len)
             attn_weights = torch.baddbmm(attn_weights, q.float(), k.float(), beta=0, alpha=scale_factor)
             attn_weights = attn_weights.reshape(bsz, num_heads, q_seq_len, k_seq_len)
+
+        # ====================================== twiker ====================================== #
+        if twiker_casual_boundary_keys_values is not None:
+            attn_weights = TwikerModel.correct_attn_weights_near_casual_boundary(
+                attn_weights=attn_weights, query=query, key=key,
+                casual_boundary_keys=twiker_casual_boundary_keys_values[0])
+        # ====================================== twiker ====================================== #
 
         if not self.is_cross_attention:
             # if only "normal" attention layer implements causal mask
@@ -285,6 +309,13 @@ class GPT2Attention(nn.Module):
 
         attn_output = torch.matmul(attn_weights, value)
 
+        # ====================================== twiker ====================================== #
+        if twiker_casual_boundary_keys_values is not None:
+            attn_output = TwikerModel.correct_attn_output_near_casual_boundary(
+                attn_output=attn_output, attn_weights=attn_weights, value=value,
+                casual_boundary_values=twiker_casual_boundary_keys_values[1])
+        # ====================================== twiker ====================================== #
+
         return attn_output, attn_weights
 
     def _split_heads(self, tensor, num_heads, attn_head_size):
@@ -313,6 +344,7 @@ class GPT2Attention(nn.Module):
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = False,
         output_attentions: Optional[bool] = False,
+        twiker_inputs: Optional[Tuple[TwikerModel, torch.FloatTensor]] = None,
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor]], ...]:
         if encoder_hidden_states is not None:
             if not hasattr(self, "q_attn"):
@@ -341,10 +373,36 @@ class GPT2Attention(nn.Module):
         else:
             present = None
 
+        # ====================================== twiker ====================================== #
+        twiker_casual_boundary_keys_values = None
+        if twiker_inputs is not None:
+            # check user-passed mask, only allowing past_key_value masking
+            if attention_mask is not None:
+                n_past = attention_mask.size(-1) - attention_mask.size(-2)
+                if (attention_mask[..., :, n_past:] < -1.).any():
+                    raise NotImplementedError("Twiker is not implemented for arbitrary attention masking.")
+
+            # convolution
+            twiker_model, twiker_kernel = twiker_inputs
+            n_past = key.size(-2) - query.size(-2)
+            key, value, casual_boundary_keys, casual_boundary_values = twiker_model.conv_key_value(
+                key[:, :, n_past:], value[:, :, n_past:], twiker_kernel, for_casual=not self.is_cross_attention)
+            if casual_boundary_keys is not None:
+                twiker_casual_boundary_keys_values = (casual_boundary_keys, casual_boundary_values)
+
+            # need to cat again because past was truncated for convolution
+            if layer_past is not None:
+                past_key, past_value = layer_past
+                key = torch.cat((past_key, key), dim=-2)
+                value = torch.cat((past_value, value), dim=-2)
+        # ====================================== twiker ====================================== #
+
         if self.reorder_and_upcast_attn:
-            attn_output, attn_weights = self._upcast_and_reordered_attn(query, key, value, attention_mask, head_mask)
+            attn_output, attn_weights = self._upcast_and_reordered_attn(query, key, value, attention_mask, head_mask,
+                                                                        twiker_casual_boundary_keys_values)
         else:
-            attn_output, attn_weights = self._attn(query, key, value, attention_mask, head_mask)
+            attn_output, attn_weights = self._attn(query, key, value, attention_mask, head_mask,
+                                                   twiker_casual_boundary_keys_values)
 
         attn_output = self._merge_heads(attn_output, self.num_heads, self.head_dim)
         attn_output = self.c_proj(attn_output)
@@ -382,7 +440,11 @@ class GPT2FlashAttention2(GPT2Attention):
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = False,
         output_attentions: Optional[bool] = False,
+        twiker_inputs: Optional[Tuple[TwikerModel, torch.FloatTensor]] = None
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor]], ...]:
+        if twiker_inputs is not None:
+            raise NotImplementedError("Twiker is not implemented for flash attention.")
+
         bsz, _, _ = hidden_states.size()
         if encoder_hidden_states is not None:
             if not hasattr(self, "q_attn"):
@@ -611,6 +673,7 @@ class GPT2Block(nn.Module):
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = False,
         output_attentions: Optional[bool] = False,
+        twiker_inputs: Optional[Tuple[TwikerModel, torch.FloatTensor]] = None
     ) -> Union[Tuple[torch.Tensor], Optional[Tuple[torch.Tensor, Tuple[torch.FloatTensor, ...]]]]:
         residual = hidden_states
         hidden_states = self.ln_1(hidden_states)
@@ -621,6 +684,7 @@ class GPT2Block(nn.Module):
             head_mask=head_mask,
             use_cache=use_cache,
             output_attentions=output_attentions,
+            twiker_inputs=twiker_inputs,
         )
         attn_output = attn_outputs[0]  # output_attn: a, present, (attentions)
         outputs = attn_outputs[1:]
@@ -643,6 +707,7 @@ class GPT2Block(nn.Module):
                 encoder_hidden_states=encoder_hidden_states,
                 encoder_attention_mask=encoder_attention_mask,
                 output_attentions=output_attentions,
+                twiker_inputs=twiker_inputs,
             )
             attn_output = cross_attn_outputs[0]
             # residual connection
@@ -690,9 +755,10 @@ class GPT2PreTrainedModel(PreTrainedModel):
             if module.bias is not None:
                 module.bias.data.zero_()
         elif isinstance(module, nn.Embedding):
-            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
-            if module.padding_idx is not None:
-                module.weight.data[module.padding_idx].zero_()
+            if module.__class__.__name__ != "TwikerEmbedding":
+                module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+                if module.padding_idx is not None:
+                    module.weight.data[module.padding_idx].zero_()
         elif isinstance(module, nn.LayerNorm):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
@@ -909,8 +975,25 @@ class GPT2Model(GPT2PreTrainedModel):
         self.gradient_checkpointing = False
         self._attn_implementation = config._attn_implementation
 
+        # ====================================== twiker ====================================== #
+        self.twiker_model = None
+        if config.twiker_activated:
+            self.twiker_model = TwikerModel(vocab_size=config.vocab_size,
+                                            kernel_size=config.twiker_kernel_size,
+                                            n_head=config.num_attention_heads,
+                                            n_layer=config.num_hidden_layers,
+                                            sum_to_one=config.twiker_sum_to_one,
+                                            head_invariant=config.twiker_head_invariant,
+                                            layer_invariant=config.twiker_layer_invariant,
+                                            strict_on_casual=config.twiker_strict_on_casual)
+        # ====================================== twiker ====================================== #
+
         # Initialize weights and apply final processing
         self.post_init()
+
+    @property
+    def twiker_activated(self):
+        return self.twiker_model is not None
 
     @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def parallelize(self, device_map=None):
@@ -931,6 +1014,8 @@ class GPT2Model(GPT2PreTrainedModel):
         self.last_device = "cuda:" + str(max(self.device_map.keys()))
         self.wte = self.wte.to(self.first_device)
         self.wpe = self.wpe.to(self.first_device)
+        if self.twiker_activated:
+            self.twiker_model.embedding = self.twiker_model.embedding.to(self.first_device)
         # Load onto devices
         for k, v in self.device_map.items():
             for block in v:
@@ -951,6 +1036,8 @@ class GPT2Model(GPT2PreTrainedModel):
         self.last_device = "cpu"
         self.wte = self.wte.to("cpu")
         self.wpe = self.wpe.to("cpu")
+        if self.twiker_activated:
+            self.twiker_model.embedding = self.twiker_model.embedding.to('cpu')
         for index in range(len(self.h)):
             self.h[index] = self.h[index].to("cpu")
         self.ln_f = self.ln_f.to("cpu")
@@ -1084,6 +1171,12 @@ class GPT2Model(GPT2PreTrainedModel):
                 )
                 use_cache = False
 
+        # ====================================== twiker ====================================== #
+        twiker_kernel_all_layers = None
+        if self.twiker_activated:
+            twiker_kernel_all_layers = self.twiker_model.embedding(input_ids)
+        # ====================================== twiker ====================================== #
+
         presents = () if use_cache else None
         all_self_attentions = () if output_attentions else None
         all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
@@ -1103,6 +1196,12 @@ class GPT2Model(GPT2PreTrainedModel):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
+            # ====================================== twiker ====================================== #
+            twiker_inputs = None
+            if self.twiker_activated:
+                twiker_inputs = (self.twiker_model, twiker_kernel_all_layers[:, :, i])
+            # ====================================== twiker ====================================== #
+
             if self.gradient_checkpointing and self.training:
                 outputs = self._gradient_checkpointing_func(
                     block.__call__,
@@ -1114,6 +1213,7 @@ class GPT2Model(GPT2PreTrainedModel):
                     encoder_attention_mask,
                     use_cache,
                     output_attentions,
+                    twiker_inputs=twiker_inputs,
                 )
             else:
                 outputs = block(
@@ -1125,6 +1225,7 @@ class GPT2Model(GPT2PreTrainedModel):
                     encoder_attention_mask=encoder_attention_mask,
                     use_cache=use_cache,
                     output_attentions=output_attentions,
+                    twiker_inputs=twiker_inputs,
                 )
 
             hidden_states = outputs[0]
