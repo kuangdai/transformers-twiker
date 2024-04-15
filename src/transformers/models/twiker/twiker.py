@@ -9,10 +9,11 @@ import torch.nn as nn
 
 
 class TwikerEmbedding(nn.Embedding):
+    """ a wrapper of `nn.Embedding` to avoid random initialization of twiker """
+
     def __init__(self, num_embeddings, embedding_dim, padding_idx=None,
                  max_norm=None, norm_type=2.0, scale_grad_by_freq=False,
                  sparse=False, _weight=None, _freeze=False, device=None, dtype=None):
-        """ avoid random initialization for twiker Embedding """
         super().__init__(num_embeddings, embedding_dim, padding_idx, max_norm, norm_type,
                          scale_grad_by_freq, sparse, _weight, _freeze, device, dtype)
 
