@@ -107,11 +107,11 @@ class TwikerModel(nn.Module):
         # rearrange output
         if self.strict_on_casual and for_casual:
             kv = kv.reshape(n_batch, 2 * n_head, p + 1, n_token, n_feat).movedim(2, -1)
-            key, value = kv[..., 0].split(H, dim=1)
-            casual_boundary_keys, casual_boundary_values = kv[..., 1:].split(H, dim=1)
+            key, value = kv[..., 0].split(n_head, dim=1)
+            casual_boundary_keys, casual_boundary_values = kv[..., 1:].split(n_head, dim=1)
             return key, value, casual_boundary_keys, casual_boundary_values
         else:
-            key, value = kv.split(H, dim=1)
+            key, value = kv.split(n_head, dim=1)
             return key, value, None, None
 
     @staticmethod
