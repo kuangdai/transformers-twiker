@@ -363,16 +363,6 @@ class GPT2Attention(nn.Module):
         key = self._split_heads(key, self.num_heads, self.head_dim)
         value = self._split_heads(value, self.num_heads, self.head_dim)
 
-        if layer_past is not None:
-            past_key, past_value = layer_past
-            key = torch.cat((past_key, key), dim=-2)
-            value = torch.cat((past_value, value), dim=-2)
-
-        if use_cache is True:
-            present = (key, value)
-        else:
-            present = None
-
         # ====================================== twiker ====================================== #
         twiker_casual_boundary_keys_values = None
         if twiker_inputs is not None:
@@ -384,18 +374,23 @@ class GPT2Attention(nn.Module):
 
             # convolution
             twiker_model, twiker_kernel = twiker_inputs
-            n_past = key.size(-2) - query.size(-2)
             key, value, casual_boundary_keys, casual_boundary_values = twiker_model.conv_key_value(
-                key[:, :, n_past:], value[:, :, n_past:], twiker_kernel, for_casual=not self.is_cross_attention)
+                key, value, twiker_kernel, for_casual=not self.is_cross_attention)
             if casual_boundary_keys is not None:
                 twiker_casual_boundary_keys_values = (casual_boundary_keys, casual_boundary_values)
-
-            # need to cat again because past was truncated for convolution
-            if layer_past is not None:
-                past_key, past_value = layer_past
-                key = torch.cat((past_key, key), dim=-2)
-                value = torch.cat((past_value, value), dim=-2)
         # ====================================== twiker ====================================== #
+
+        if layer_past is not None:
+            past_key, past_value = layer_past
+            key = torch.cat((past_key, key), dim=-2)
+            value = torch.cat((past_value, value), dim=-2)
+
+        if use_cache is True:
+            if twiker_casual_boundary_keys_values is not None:
+                raise NotImplementedError("Twiker with strict casual is not implemented for cached generation.")
+            present = (key, value)
+        else:
+            present = None
 
         if self.reorder_and_upcast_attn:
             attn_output, attn_weights = self._upcast_and_reordered_attn(query, key, value, attention_mask, head_mask,
