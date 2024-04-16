@@ -95,7 +95,7 @@ class TwikerModel(nn.Module):
         # reshape: (B, 2 * H, K, N, F)
         kv = kv.reshape(n_batch, 2 * n_head, self.kernel_size, n_token, n_feat)
 
-        # casual
+        # casual handling
         p = self.kernel_size // 2
         if for_casual:
             if self.casual_handling == "only_left_half":
