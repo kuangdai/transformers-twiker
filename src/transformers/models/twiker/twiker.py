@@ -93,13 +93,12 @@ class TwikerModel(nn.Module):
         # merge kv: (B, 2 * H, N, F)
         kv = torch.cat((key, value), dim=1)
         # unfold: (B, 2 * H * K, N * F)
-        kv = torch.nn.functional.unfold(kv, kernel_size=(self.kernel_size, 1),
-                                        padding=(self.kernel_size // 2, 0))
+        p = self.kernel_size // 2
+        kv = torch.nn.functional.unfold(kv, kernel_size=(self.kernel_size, 1), padding=(p, 0))
         # reshape: (B, 2 * H, K, N, F)
         kv = kv.reshape(n_batch, 2 * n_head, self.kernel_size, n_token, n_feat)
 
         # casual handling
-        p = self.kernel_size // 2
         if for_casual:
             if self.casual_handling == "only_left_half":
                 kernel = kernel * self.casual_mask.to(
@@ -107,10 +106,10 @@ class TwikerModel(nn.Module):
             elif self.casual_handling in ["truncate_near_boundary", "shrink_near_boundary"]:
                 # make copies of kernel: (B, N, 2 * H, p + 1, K)
                 kernel = kernel.unsqueeze(-2).expand(-1, -1, -1, p + 1, -1)
-                # mask future ones
+                # apply masking
                 kernel = kernel * self.casual_mask.to(
                     dtype=kernel.dtype, device=kernel.device)[None, None, None, :, :]
-                # merge 2H and p: (B, N, 2 * H * (p + 1), K)
+                # merge 2H and p to channel: (B, N, 2 * H * (p + 1), K)
                 kernel = kernel.flatten(2, 3)
                 # make copies of kv: (B, 2 * H, K, N, F) => (B, 2 * H * (p + 1), K, N, F)
                 kv = kv.unsqueeze(2).expand(-1, -1, p + 1, -1, -1, -1).flatten(1, 2)
@@ -123,7 +122,7 @@ class TwikerModel(nn.Module):
 
         # mm
         kernel = kernel.to(dtype=kv.dtype, device=kv.device)
-        kv = torch.einsum('BGkNF,BNGk->BGNF', kv, kernel)  # noqa
+        kv = torch.einsum('BGkNF,BNGk->BGNF', kv, kernel)
 
         # fold
         kv = kv.reshape(kv.size(0), kv.size(1), -1)
