@@ -48,7 +48,8 @@ class TwikerModel(nn.Module):
         p = self.kernel_size // 2
         self.casual_mask = torch.ones(p + 1, self.kernel_size)
         for i in range(1, p + 1):
-            self.casual_mask[i, (self.kernel_size - i):].zero_()
+            self.casual_mask[i, :i].zero_()  # 11111 => 01111
+            self.casual_mask[i, -i:].zero_()  # 01111 => 01110
 
     def get_kernel(self, input_ids: torch.LongTensor):
         kernel = self.embedding(input_ids)
@@ -91,9 +92,13 @@ class TwikerModel(nn.Module):
             # make copies of kernel: (B, N, 2 * H, p + 1, K)
             kernel = kernel.unsqueeze(-2).expand(-1, -1, -1, p + 1, -1)
             # mask future ones
-            kernel = kernel * self.casual_mask.to(kernel.device)[None, None, None]
+            kernel = kernel * self.casual_mask.to(
+                dtype=kernel.dtype, device=kernel.device)[None, None, None, :, :]
             # merge 2H and p: (B, N, 2 * H * (p + 1), K)
             kernel = kernel.flatten(2, 3)
+            # sum to one after masking
+            if self.sum_to_one:
+                kernel = kernel / kernel.sum(dim=-1)[:, :, :, None]
             # make copies of kv: (B, 2 * H, K, N, F) => (B, 2 * H * (p + 1), K, N, F)
             kv = kv.unsqueeze(2).expand(-1, -1, p + 1, -1, -1, -1).flatten(1, 2)
 
@@ -123,7 +128,7 @@ class TwikerModel(nn.Module):
         n_past = key.size(-2) - query.size(-2)
         p = casual_boundary_keys.size(-1)
         for i in range(0, p):
-            cb_key = casual_boundary_keys[..., i]  # 11110, 11100
+            cb_key = casual_boundary_keys[..., i]  # 01110, 00100
             offset = p - i - 1
             correct = torch.einsum("BHNF,BHNF->BHN",
                                    query[:, :, offset:, :],
@@ -142,7 +147,7 @@ class TwikerModel(nn.Module):
         n_past = attn_weights.size(-1) - attn_weights.size(-2)
         p = casual_boundary_values.size(-1)
         for i in range(0, p):
-            cb_value = casual_boundary_values[..., i]  # 11110, 11100
+            cb_value = casual_boundary_values[..., i]  # 01110, 00100
             offset = p - i - 1
             diag_att_w = attn_weights[..., n_past:].diagonal(offset=-offset, dim1=2, dim2=3)
             diff_value = (cb_value[:, :, :cb_value.size(2) - offset, :]
