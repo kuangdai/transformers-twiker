@@ -142,18 +142,15 @@ class TwikerModel(nn.Module):
     def correct_attn_weights_near_casual_boundary(attn_weights: torch.Tensor,
                                                   query: torch.Tensor,
                                                   casual_boundary_keys: torch.Tensor):
-        n_past = attn_weights.size(-1) - attn_weights.size(-2)
         p = casual_boundary_keys.size(-1)
         for i_mask in range(0, p):
-            cb_key = casual_boundary_keys[..., i_mask]  # 01110, 00100
             offset = p - i_mask - 1
+            cb_key = casual_boundary_keys[..., i_mask]  # 01110, 00100
             correct = torch.einsum("BHNF,BHNF->BHN",
                                    query[:, :, offset:, :],
                                    cb_key[:, :, :cb_key.size(2) - offset, :])
-            attn_weights_square = attn_weights[..., n_past:].diagonal_scatter(
+            attn_weights = attn_weights.diagonal_scatter(
                 correct, offset=-offset, dim1=2, dim2=3)
-            attn_weights = torch.cat((attn_weights[..., :n_past],
-                                      attn_weights_square), dim=-1)
         return attn_weights
 
     @staticmethod
@@ -161,14 +158,13 @@ class TwikerModel(nn.Module):
                                                  attn_weights: torch.Tensor,
                                                  value: torch.Tensor,
                                                  casual_boundary_values: torch.Tensor):
-        n_past = attn_weights.size(-1) - attn_weights.size(-2)
         p = casual_boundary_values.size(-1)
         for i_mask in range(0, p):
-            cb_value = casual_boundary_values[..., i_mask]  # 01110, 00100
             offset = p - i_mask - 1
-            diag_att_w = attn_weights[..., n_past:].diagonal(offset=-offset, dim1=2, dim2=3)
+            cb_value = casual_boundary_values[..., i_mask]  # 01110, 00100
+            diag_att_w = attn_weights.diagonal(offset=-offset, dim1=2, dim2=3)
             diff_value = (cb_value[:, :, :cb_value.size(2) - offset, :]
-                          - value[:, :, n_past:value.size(2) - offset, :])
+                          - value[:, :, :value.size(2) - offset, :])
             diff = torch.einsum("BHN,BHNF->BHNF", diag_att_w, diff_value)
             diff = torch.nn.functional.pad(diff, pad=(0, 0, offset, 0))
             attn_output = attn_output + diff
