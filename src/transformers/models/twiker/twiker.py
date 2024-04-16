@@ -36,9 +36,9 @@ class TwikerModel(nn.Module):
         assert kernel_size % 2 == 1, "Kernel size must be odd."
         assert casual_handling in [
             "none",  # do not handle
-            "only_left_half",  # always use 11100
-            "truncate_near_boundary",  # use 11110, 11100 near boundary
-            "shrink_near_boundary",  # use 01110, 00100 near boundary
+            "only_left_half",  # always mask kernels by 11100
+            "truncate_near_boundary",  # mask kernels by 11110, 11100 near boundary
+            "shrink_near_boundary",  # mask kernels by 01110, 00100 near boundary
         ], f"Unknown value for `casual_handling`: {casual_handling}."
 
         # embedding layer
