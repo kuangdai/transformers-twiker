@@ -50,11 +50,11 @@ class TwikerModel(nn.Module):
         self.embedding = TwikerEmbedding(vocab_size, math.prod(weight_shape[1:]))
 
         # initialize weights: 00100
+        p = self.kernel_size // 2
         self.embedding.weight.data.fill_(0.)
-        self.embedding.weight.data.view(weight_shape)[..., self.kernel_size // 2].fill_(1.)
+        self.embedding.weight.data.view(weight_shape)[..., p].fill_(1.)
 
         # prepare casual mask
-        p = self.kernel_size // 2
         if casual_handling == "none":
             self.casual_mask = None
         elif casual_handling == "only_left_half":
