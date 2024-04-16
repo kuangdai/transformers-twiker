@@ -145,15 +145,19 @@ class TwikerModel(nn.Module):
         n_past = attn_weights.size(-1) - attn_weights.size(-2)
         p = casual_boundary_keys.size(-1)
         for i_mask in range(0, p):
-            cb_key = casual_boundary_keys[..., i_mask]  # 01110, 00100
             offset = p - i_mask - 1
+            cb_key = casual_boundary_keys[..., i_mask]  # 01110, 00100
             correct = torch.einsum("BHNF,BHNF->BHN",
                                    query[:, :, offset:, :],
                                    cb_key[:, :, :cb_key.size(2) - offset, :])
-            attn_weights_square = attn_weights[..., n_past:].diagonal_scatter(
-                correct, offset=-offset, dim1=2, dim2=3)
-            attn_weights = torch.cat((attn_weights[..., :n_past],
-                                      attn_weights_square), dim=-1)
+            if n_past == 0:
+                attn_weights = attn_weights.diagonal_scatter(
+                    correct, offset=-offset, dim1=2, dim2=3)
+            else:
+                attn_weights_square = attn_weights[..., n_past:].diagonal_scatter(
+                    correct, offset=-offset, dim1=2, dim2=3)
+                attn_weights = torch.cat((attn_weights[..., :n_past],
+                                          attn_weights_square), dim=-1)
         return attn_weights
 
     @staticmethod
@@ -164,8 +168,8 @@ class TwikerModel(nn.Module):
         n_past = attn_weights.size(-1) - attn_weights.size(-2)
         p = casual_boundary_values.size(-1)
         for i_mask in range(0, p):
-            cb_value = casual_boundary_values[..., i_mask]  # 01110, 00100
             offset = p - i_mask - 1
+            cb_value = casual_boundary_values[..., i_mask]  # 01110, 00100
             diag_att_w = attn_weights[..., n_past:].diagonal(offset=-offset, dim1=2, dim2=3)
             diff_value = (cb_value[:, :, :cb_value.size(2) - offset, :]
                           - value[:, :, n_past:value.size(2) - offset, :])
