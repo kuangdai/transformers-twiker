@@ -127,9 +127,9 @@ class TwikerModel(nn.Module):
                                                   casual_boundary_keys: torch.Tensor):
         n_past = key.size(-2) - query.size(-2)
         p = casual_boundary_keys.size(-1)
-        for i in range(0, p):
-            cb_key = casual_boundary_keys[..., i]  # 01110, 00100
-            offset = p - i - 1
+        for i_mask in range(0, p):
+            cb_key = casual_boundary_keys[..., i_mask]  # 01110, 00100
+            offset = p - i_mask - 1
             correct = torch.einsum("BHNF,BHNF->BHN",
                                    query[:, :, offset:, :],
                                    cb_key[:, :, :cb_key.size(2) - offset, :])
@@ -146,9 +146,9 @@ class TwikerModel(nn.Module):
                                                  casual_boundary_values: torch.Tensor):
         n_past = attn_weights.size(-1) - attn_weights.size(-2)
         p = casual_boundary_values.size(-1)
-        for i in range(0, p):
-            cb_value = casual_boundary_values[..., i]  # 01110, 00100
-            offset = p - i - 1
+        for i_mask in range(0, p):
+            cb_value = casual_boundary_values[..., i_mask]  # 01110, 00100
+            offset = p - i_mask - 1
             diag_att_w = attn_weights[..., n_past:].diagonal(offset=-offset, dim1=2, dim2=3)
             diff_value = (cb_value[:, :, :cb_value.size(2) - offset, :]
                           - value[:, :, n_past:value.size(2) - offset, :])
