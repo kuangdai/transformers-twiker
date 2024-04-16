@@ -61,7 +61,7 @@
 #             att_w_manual[:, :, i_query, past + i_key] = torch.matmul(q, k.transpose(-1, -2)).squeeze()
 #
 #     # fast correction
-#     att_w_fast = emb.correct_attn_weights_near_casual_boundary(att_w, query_, key_, ck)
+#     att_w_fast = emb.correct_attn_weights_near_casual_boundary(att_w, query_, ck)
 #     print((att_w_manual - att_w_fast).abs().max())
 #
 #     # mask
@@ -136,8 +136,7 @@
 #                                                           key_[b, h, nn + k]).sum()
 #
 #     att_w1 = torch.matmul(query_, conv_key1.transpose(-1, -2))
-#     att_w1_cb = emb.correct_attn_weights_near_casual_boundary(att_w1, query_, conv_key1,
-#                                                               cb_key1)
+#     att_w1_cb = emb.correct_attn_weights_near_casual_boundary(att_w1, query_, cb_key1)
 #     print((att_w1 - att_w).max().abs())
 #     print((att_w1_cb - att_w_cb).max().abs())
 #
