@@ -123,7 +123,7 @@ class GPT2Config(PretrainedConfig):
         twiker_layer_invariant (`bool`, *optional*, defaults to `True`):
             Whether TWIKER is layer-invariant.
         twiker_casual_handling (`str`, *optional*, defaults to `"none"`):
-            How TWIKER handle casual masking; must be chosen from
+            How TWIKER handles casual masking; must be chosen from
             `["none", "only_left_half", "truncate_near_boundary", "shrink_near_boundary"]`.
     Example:
 
