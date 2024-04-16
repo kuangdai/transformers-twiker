@@ -21,7 +21,7 @@ class TwikerEmbedding(nn.Embedding):
 class TwikerModel(nn.Module):
     def __init__(self, vocab_size: int, kernel_size: int, n_head: int, n_layer: int,
                  sum_to_one: bool = False, head_invariant: bool = True,
-                 layer_invariant: bool = True, strict_on_casual: bool = True):
+                 layer_invariant: bool = True, casual_handling: str = "none"):
         super().__init__()
         self.vocab_size = vocab_size
         self.kernel_size = kernel_size
@@ -30,7 +30,16 @@ class TwikerModel(nn.Module):
         self.sum_to_one = sum_to_one
         self.head_invariant = head_invariant
         self.layer_invariant = layer_invariant
-        self.strict_on_casual = strict_on_casual
+        self.casual_handling = casual_handling
+
+        # verify arguments
+        assert kernel_size % 2 == 1, "Kernel size must be odd."
+        assert casual_handling in [
+            "none",  # do not handle
+            "only_left_half",  # always use 11100
+            "truncate_near_boundary",  # use 11110, 11100 near boundary
+            "shrink_near_boundary",  # use 01110, 00100 near boundary
+        ], f"Unknown value for `casual_handling`: {casual_handling}."
 
         # embedding layer
         weight_shape = [vocab_size, n_layer, 2, n_head, kernel_size]
@@ -45,11 +54,15 @@ class TwikerModel(nn.Module):
         self.embedding.weight.data.view(weight_shape)[..., self.kernel_size // 2].fill_(1.)
 
         # prepare casual mask
-        p = self.kernel_size // 2
-        self.casual_mask = torch.ones(p + 1, self.kernel_size)
-        for i_mask in range(1, p + 1):
-            self.casual_mask[i_mask, :i_mask].zero_()  # 11111 => 01111
-            self.casual_mask[i_mask, -i_mask:].zero_()  # 01111 => 01110
+        if casual_handling in ["none", "only_left_half"]:
+            self.casual_mask = None
+        else:
+            p = self.kernel_size // 2
+            self.casual_mask = torch.ones(p + 1, self.kernel_size)
+            for i_mask in range(1, p + 1):
+                self.casual_mask[i_mask, -i_mask:].zero_()  # 11111 => 11110
+                if casual_handling == "shrink_near_boundary":
+                    self.casual_mask[i_mask, :i_mask].zero_()  # 11110 => 01110
 
     def get_kernel(self, input_ids: torch.LongTensor):
         kernel = self.embedding(input_ids)
@@ -66,10 +79,6 @@ class TwikerModel(nn.Module):
 
         # merge kv and head dimensions
         kernel = kernel.reshape(n_batch, n_token, self.n_layer, 2 * self.n_head, self.kernel_size)
-
-        # sum to one
-        if self.sum_to_one:
-            kernel = kernel / kernel.sum(dim=-1)[:, :, :, :, None]
         return kernel
 
     def conv_key_value(self, key: torch.Tensor, value: torch.Tensor, kernel: torch.Tensor,
@@ -88,19 +97,28 @@ class TwikerModel(nn.Module):
 
         # casual
         p = self.kernel_size // 2
-        if self.strict_on_casual and for_casual:
-            # make copies of kernel: (B, N, 2 * H, p + 1, K)
-            kernel = kernel.unsqueeze(-2).expand(-1, -1, -1, p + 1, -1)
-            # mask future ones
-            kernel = kernel * self.casual_mask.to(
-                dtype=kernel.dtype, device=kernel.device)[None, None, None, :, :]
-            # merge 2H and p: (B, N, 2 * H * (p + 1), K)
-            kernel = kernel.flatten(2, 3)
-            # sum to one after masking
-            if self.sum_to_one:
-                kernel = kernel / kernel.sum(dim=-1)[:, :, :, None]
-            # make copies of kv: (B, 2 * H, K, N, F) => (B, 2 * H * (p + 1), K, N, F)
-            kv = kv.unsqueeze(2).expand(-1, -1, p + 1, -1, -1, -1).flatten(1, 2)
+        if for_casual:
+            if self.casual_handling == "only_left_half":
+                kernel = kernel[:, :, :, p + 1:].zero_()
+            elif self.casual_handling in ["truncate_near_boundary", "shrink_near_boundary"]:
+                # make copies of kernel: (B, N, 2 * H, p + 1, K)
+                kernel = kernel.unsqueeze(-2).expand(-1, -1, -1, p + 1, -1)
+                # mask future ones
+                kernel = kernel * self.casual_mask.to(
+                    dtype=kernel.dtype, device=kernel.device)[None, None, None, :, :]
+                # merge 2H and p: (B, N, 2 * H * (p + 1), K)
+                kernel = kernel.flatten(2, 3)
+                # sum to one after masking
+                if self.sum_to_one:
+                    kernel = kernel / kernel.sum(dim=-1)[:, :, :, None]
+                # make copies of kv: (B, 2 * H, K, N, F) => (B, 2 * H * (p + 1), K, N, F)
+                kv = kv.unsqueeze(2).expand(-1, -1, p + 1, -1, -1, -1).flatten(1, 2)
+            else:
+                pass  # self.casual_handling == "none"
+
+        # sum to one
+        if self.sum_to_one:
+            kernel = kernel / kernel.sum(dim=-1)[:, :, :, None]
 
         # mm
         kernel = kernel.to(dtype=kv.dtype, device=kv.device)
@@ -111,7 +129,7 @@ class TwikerModel(nn.Module):
         kv = torch.nn.functional.fold(kv, output_size=(n_token, n_feat), kernel_size=(1, 1))
 
         # rearrange output
-        if self.strict_on_casual and for_casual:
+        if for_casual and self.casual_handling in ["truncate_near_boundary", "shrink_near_boundary"]:
             kv = kv.reshape(n_batch, 2 * n_head, p + 1, n_token, n_feat).movedim(2, -1)
             key, value = kv[..., 0].split(n_head, dim=1)
             casual_boundary_keys, casual_boundary_values = kv[..., 1:].split(n_head, dim=1)
