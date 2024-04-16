@@ -203,7 +203,7 @@ class GPT2Attention(nn.Module):
         # ====================================== twiker ====================================== #
         if twiker_casual_boundary_keys_values is not None:
             attn_weights = TwikerModel.correct_attn_weights_near_casual_boundary(
-                attn_weights=attn_weights, query=query, key=key,
+                attn_weights=attn_weights, query=query,
                 casual_boundary_keys=twiker_casual_boundary_keys_values[0])
         # ====================================== twiker ====================================== #
 
@@ -277,7 +277,7 @@ class GPT2Attention(nn.Module):
         # ====================================== twiker ====================================== #
         if twiker_casual_boundary_keys_values is not None:
             attn_weights = TwikerModel.correct_attn_weights_near_casual_boundary(
-                attn_weights=attn_weights, query=query, key=key,
+                attn_weights=attn_weights, query=query,
                 casual_boundary_keys=twiker_casual_boundary_keys_values[0])
         # ====================================== twiker ====================================== #
 
@@ -386,8 +386,8 @@ class GPT2Attention(nn.Module):
             value = torch.cat((past_value, value), dim=-2)
 
         if use_cache is True:
-            if twiker_casual_boundary_keys_values is not None:
-                raise NotImplementedError("Twiker with strict casual is not implemented for cached generation.")
+            if twiker_inputs is not None:
+                raise NotImplementedError("Twiker is not implemented for cached generation.")
             present = (key, value)
         else:
             present = None
@@ -980,7 +980,7 @@ class GPT2Model(GPT2PreTrainedModel):
                                             sum_to_one=config.twiker_sum_to_one,
                                             head_invariant=config.twiker_head_invariant,
                                             layer_invariant=config.twiker_layer_invariant,
-                                            strict_on_casual=config.twiker_strict_on_casual)
+                                            casual_handling=config.twiker_casual_handling)
         # ====================================== twiker ====================================== #
 
         # Initialize weights and apply final processing
