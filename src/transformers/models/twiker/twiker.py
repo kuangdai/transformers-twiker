@@ -54,10 +54,13 @@ class TwikerModel(nn.Module):
         self.embedding.weight.data.view(weight_shape)[..., self.kernel_size // 2].fill_(1.)
 
         # prepare casual mask
-        if casual_handling in ["none", "only_left_half"]:
+        p = self.kernel_size // 2
+        if casual_handling == "none":
             self.casual_mask = None
+        elif casual_handling == "only_left_half":
+            self.casual_mask = torch.ones(self.kernel_size)
+            self.casual_mask[p + 1:].zero_()
         else:
-            p = self.kernel_size // 2
             self.casual_mask = torch.ones(p + 1, self.kernel_size)
             for i_mask in range(1, p + 1):
                 self.casual_mask[i_mask, -i_mask:].zero_()  # 11111 => 11110
@@ -99,7 +102,8 @@ class TwikerModel(nn.Module):
         p = self.kernel_size // 2
         if for_casual:
             if self.casual_handling == "only_left_half":
-                kernel = kernel[:, :, :, p + 1:].zero_()
+                kernel = kernel * self.casual_mask.to(
+                    dtype=kernel.dtype, device=kernel.device)[None, None, None, :]
             elif self.casual_handling in ["truncate_near_boundary", "shrink_near_boundary"]:
                 # make copies of kernel: (B, N, 2 * H, p + 1, K)
                 kernel = kernel.unsqueeze(-2).expand(-1, -1, -1, p + 1, -1)
@@ -108,9 +112,6 @@ class TwikerModel(nn.Module):
                     dtype=kernel.dtype, device=kernel.device)[None, None, None, :, :]
                 # merge 2H and p: (B, N, 2 * H * (p + 1), K)
                 kernel = kernel.flatten(2, 3)
-                # sum to one after masking
-                if self.sum_to_one:
-                    kernel = kernel / kernel.sum(dim=-1)[:, :, :, None]
                 # make copies of kv: (B, 2 * H, K, N, F) => (B, 2 * H * (p + 1), K, N, F)
                 kv = kv.unsqueeze(2).expand(-1, -1, p + 1, -1, -1, -1).flatten(1, 2)
             else:
@@ -141,9 +142,8 @@ class TwikerModel(nn.Module):
     @staticmethod
     def correct_attn_weights_near_casual_boundary(attn_weights: torch.Tensor,
                                                   query: torch.Tensor,
-                                                  key: torch.Tensor,
                                                   casual_boundary_keys: torch.Tensor):
-        n_past = key.size(-2) - query.size(-2)
+        n_past = attn_weights.size(-1) - attn_weights.size(-2)
         p = casual_boundary_keys.size(-1)
         for i_mask in range(0, p):
             cb_key = casual_boundary_keys[..., i_mask]  # 01110, 00100
