@@ -113,17 +113,18 @@ class GPT2Config(PretrainedConfig):
             dot-product/softmax to float() when training with mixed precision.
 
         twiker_activated (`bool`, *optional*, defaults to `False`):
-            Whether to activate TWIKER
+            Whether to activate TWIKER.
         twiker_kernel_size (`int`, *optional*, defaults to `3`):
-            Kernel size of TWIKER
+            Kernel size of TWIKER.
         twiker_sum_to_one (`bool`, *optional*, defaults to `False`):
-            Whether to make TWIKER sum to one
+            Whether to make TWIKER sum to one.
         twiker_head_invariant (`bool`, *optional*, defaults to `True`):
-            Whether TWIKER is head-invariant
+            Whether TWIKER is head-invariant.
         twiker_layer_invariant (`bool`, *optional*, defaults to `True`):
-            Whether TWIKER is layer-invariant
-        twiker_strict_on_casual (`bool`, *optional*, defaults to `True`):
-            Whether TWIKER is strict on casual
+            Whether TWIKER is layer-invariant.
+        twiker_casual_handling (`str`, *optional*, defaults to `"none"`):
+            How TWIKER handle casual masking; must be chosen from
+            `["none", "only_left_half", "truncate_near_boundary", "shrink_near_boundary"]`.
     Example:
 
     ```python
@@ -178,7 +179,7 @@ class GPT2Config(PretrainedConfig):
         twiker_sum_to_one=False,
         twiker_head_invariant=True,
         twiker_layer_invariant=True,
-        twiker_strict_on_casual=True,
+        twiker_casual_handling="none",
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -212,8 +213,7 @@ class GPT2Config(PretrainedConfig):
         self.twiker_sum_to_one = twiker_sum_to_one
         self.twiker_head_invariant = twiker_head_invariant
         self.twiker_layer_invariant = twiker_layer_invariant
-        self.twiker_strict_on_casual = twiker_strict_on_casual
-
+        self.twiker_casual_handling = twiker_casual_handling
         super().__init__(bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs)
 
 
