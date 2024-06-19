@@ -118,6 +118,8 @@ class GPT2Config(PretrainedConfig):
             Kernel size of TWIKER.
         twiker_sum_to_one (`bool`, *optional*, defaults to `False`):
             Whether to make TWIKER sum to one.
+        twiker_to_be_convovled (`string`, *optional*, defaults to `kv`):
+            Whether to consider TWIKER for key or value or both.
         twiker_head_invariant (`bool`, *optional*, defaults to `True`):
             Whether TWIKER is head-invariant.
         twiker_layer_invariant (`bool`, *optional*, defaults to `True`):
@@ -177,6 +179,7 @@ class GPT2Config(PretrainedConfig):
         twiker_activated=False,
         twiker_kernel_size=3,
         twiker_sum_to_one=False,
+        twiker_to_be_convolved="kv",
         twiker_head_invariant=True,
         twiker_layer_invariant=True,
         twiker_casual_handling="none",
@@ -211,6 +214,7 @@ class GPT2Config(PretrainedConfig):
         self.twiker_activated = twiker_activated
         self.twiker_kernel_size = twiker_kernel_size
         self.twiker_sum_to_one = twiker_sum_to_one
+        self.twiker_to_be_convolved = twiker_to_be_convolved
         self.twiker_head_invariant = twiker_head_invariant
         self.twiker_layer_invariant = twiker_layer_invariant
         self.twiker_casual_handling = twiker_casual_handling

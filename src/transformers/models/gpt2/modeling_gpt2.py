@@ -978,6 +978,7 @@ class GPT2Model(GPT2PreTrainedModel):
                                             n_head=config.num_attention_heads,
                                             n_layer=config.num_hidden_layers,
                                             sum_to_one=config.twiker_sum_to_one,
+                                            to_be_convolved=config.twiker_to_be_convolved,
                                             head_invariant=config.twiker_head_invariant,
                                             layer_invariant=config.twiker_layer_invariant,
                                             casual_handling=config.twiker_casual_handling)

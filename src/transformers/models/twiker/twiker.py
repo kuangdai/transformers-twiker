@@ -20,20 +20,24 @@ class TwikerEmbedding(nn.Embedding):
 
 class TwikerModel(nn.Module):
     def __init__(self, vocab_size: int, kernel_size: int, n_head: int, n_layer: int,
-                 sum_to_one: bool = False, head_invariant: bool = True,
-                 layer_invariant: bool = True, casual_handling: str = "none"):
+                 sum_to_one: bool = False, to_be_convolved: str = "kv",
+                 head_invariant: bool = True, layer_invariant: bool = True,
+                 casual_handling: str = "none"):
         super().__init__()
         self.vocab_size = vocab_size
         self.kernel_size = kernel_size
         self.n_head = n_head
         self.n_layer = n_layer
         self.sum_to_one = sum_to_one
+        self.to_be_convolved = to_be_convolved
         self.head_invariant = head_invariant
         self.layer_invariant = layer_invariant
         self.casual_handling = casual_handling
 
         # verify arguments
         assert kernel_size % 2 == 1, "Kernel size must be odd."
+        assert to_be_convolved in ["kv", "k", "v"], \
+            f"Unknown value for `to_be_convolved`: {to_be_convolved}."
         assert casual_handling in [
             "none",  # do not handle
             "only_left_half",  # always mask kernels by 11100
@@ -79,6 +83,16 @@ class TwikerModel(nn.Module):
         if self.layer_invariant:
             actual_shape[2] = 1
         kernel = kernel.reshape(actual_shape).expand(wanted_shape)
+
+        # handle kv, k, v
+        t00100 = torch.zeros((n_batch, n_token, self.n_layer, 1, self.n_head, self.kernel_size))
+        t00100[..., self.kernel_size // 2] = 1.
+        if self.to_be_convolved == "k":
+            kernel = torch.cat((kernel[:, :, :, 0:1, :, :], t00100), dim=3)
+        elif self.to_be_convolved == "v":
+            kernel = torch.cat((t00100, kernel[:, :, :, 1:2, :, :]), dim=3)
+        else:
+            assert self.to_be_convolved == "kv"
 
         # merge kv and head dimensions
         kernel = kernel.reshape(n_batch, n_token, self.n_layer, 2 * self.n_head, self.kernel_size)
