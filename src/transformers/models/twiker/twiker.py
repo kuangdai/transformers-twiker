@@ -118,7 +118,8 @@ class TwikerModel(nn.Module):
 
         # sum to one
         if self.sum_to_one:
-            kernel = kernel / kernel.sum(dim=-1)[:, :, :, None]
+            k2 = kernel ** 2
+            kernel = k2 / k2.sum(dim=-1)[:, :, :, None]
 
         # mm
         kernel = kernel.to(dtype=kv.dtype, device=kv.device)
