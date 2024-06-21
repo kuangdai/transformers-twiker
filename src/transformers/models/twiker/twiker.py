@@ -132,7 +132,10 @@ class TwikerModel(nn.Module):
 
         # sum to one
         if self.sum_to_one:
-            kernel = kernel / kernel.sum(dim=-1)[:, :, :, None]
+            k_min = torch.min(kernel, dim=-1)[0][:, :, :, None]
+            k_max = torch.max(kernel, dim=-1)[0][:, :, :, None]
+            kernel_minmax = (kernel - k_min) / (k_max - k_min)
+            kernel = kernel_minmax / torch.sum(kernel_minmax, dim=-1)[:, :, :, None]
 
         # mm
         kernel = kernel.to(dtype=kv.dtype, device=kv.device)
