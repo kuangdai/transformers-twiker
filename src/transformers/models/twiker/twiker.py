@@ -56,7 +56,7 @@ class TwikerModel(nn.Module):
         # initialize weights: 00100
         p = self.kernel_size // 2
         self.embedding.weight.data.fill_(0.)
-        self.embedding.weight.data.view(weight_shape)[..., p].fill_(1.)
+        self.embedding.weight.data.view(weight_shape)[..., p].fill_(10.)
 
         # prepare casual mask
         if casual_handling == "none":
@@ -132,10 +132,7 @@ class TwikerModel(nn.Module):
 
         # sum to one
         if self.sum_to_one:
-            k_min = torch.min(kernel, dim=-1)[0][:, :, :, None]
-            k_max = torch.max(kernel, dim=-1)[0][:, :, :, None]
-            kernel_minmax = (kernel - k_min) / (k_max - k_min)
-            kernel = kernel_minmax / torch.sum(kernel_minmax, dim=-1)[:, :, :, None]
+            kernel = torch.softmax(kernel, dim=-1)
 
         # mm
         kernel = kernel.to(dtype=kv.dtype, device=kv.device)
