@@ -85,8 +85,9 @@ class TwikerModel(nn.Module):
         kernel = kernel.reshape(actual_shape).expand(wanted_shape)
 
         # handle kv, k, v
-        t00100 = torch.zeros((n_batch, n_token, self.n_layer, 1, self.n_head, self.kernel_size))
-        t00100[..., self.kernel_size // 2] = 1.
+        t00100 = torch.zeros((n_batch, n_token, self.n_layer, 1, self.n_head, self.kernel_size),
+                             device=kernel.device)
+        t00100[..., self.kernel_size // 2] = 10.
         if self.to_be_convolved == "k":
             kernel = torch.cat((kernel[:, :, :, 0:1, :, :], t00100), dim=3)
         elif self.to_be_convolved == "v":
