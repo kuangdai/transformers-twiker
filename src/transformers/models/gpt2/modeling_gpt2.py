@@ -981,7 +981,8 @@ class GPT2Model(GPT2PreTrainedModel):
                                             to_be_convolved=config.twiker_to_be_convolved,
                                             head_invariant=config.twiker_head_invariant,
                                             layer_invariant=config.twiker_layer_invariant,
-                                            casual_handling=config.twiker_casual_handling)
+                                            casual_handling=config.twiker_casual_handling,
+                                            temperature=config.twiker_temperature)
         # ====================================== twiker ====================================== #
 
         # Initialize weights and apply final processing

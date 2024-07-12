@@ -22,7 +22,7 @@ class TwikerModel(nn.Module):
     def __init__(self, vocab_size: int, kernel_size: int, n_head: int, n_layer: int,
                  sum_to_one: bool = False, to_be_convolved: str = "kv",
                  head_invariant: bool = True, layer_invariant: bool = True,
-                 casual_handling: str = "none"):
+                 casual_handling: str = "none", temperature: float = 1.0):
         super().__init__()
         self.vocab_size = vocab_size
         self.kernel_size = kernel_size
@@ -33,7 +33,7 @@ class TwikerModel(nn.Module):
         self.head_invariant = head_invariant
         self.layer_invariant = layer_invariant
         self.casual_handling = casual_handling
-        self.temperature = 1.0
+        self.temperature = temperature
 
         # verify arguments
         assert kernel_size % 2 == 1, "Kernel size must be odd."

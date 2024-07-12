@@ -127,6 +127,8 @@ class GPT2Config(PretrainedConfig):
         twiker_casual_handling (`str`, *optional*, defaults to `"none"`):
             How TWIKER handles casual masking; must be chosen from
             `["none", "only_left_half", "truncate_near_boundary", "shrink_near_boundary"]`.
+        twiker_temperature (`float`, *optional*, defaults to `1.0`):
+            Temperatue for softmax.
     Example:
 
     ```python
@@ -183,6 +185,7 @@ class GPT2Config(PretrainedConfig):
         twiker_head_invariant=True,
         twiker_layer_invariant=True,
         twiker_casual_handling="none",
+        twiker_temperature=1.0,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -218,6 +221,7 @@ class GPT2Config(PretrainedConfig):
         self.twiker_head_invariant = twiker_head_invariant
         self.twiker_layer_invariant = twiker_layer_invariant
         self.twiker_casual_handling = twiker_casual_handling
+        self.twiker_temperature = twiker_temperature
         super().__init__(bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs)
 
 
