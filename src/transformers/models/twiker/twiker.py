@@ -33,6 +33,7 @@ class TwikerModel(nn.Module):
         self.head_invariant = head_invariant
         self.layer_invariant = layer_invariant
         self.casual_handling = casual_handling
+        self.temperature = 1.0
 
         # verify arguments
         assert kernel_size % 2 == 1, "Kernel size must be odd."
@@ -56,7 +57,10 @@ class TwikerModel(nn.Module):
         # initialize weights: 00100
         p = self.kernel_size // 2
         self.embedding.weight.data.fill_(0.)
-        self.embedding.weight.data.view(weight_shape)[..., p].fill_(10.)
+        if self.sum_to_one:
+            self.embedding.weight.data.view(weight_shape)[..., p].fill_(10. * self.temperature)
+        else:
+            self.embedding.weight.data.view(weight_shape)[..., p].fill_(1.)
 
         # prepare casual mask
         if casual_handling == "none":
@@ -87,7 +91,10 @@ class TwikerModel(nn.Module):
         # handle kv, k, v
         t00100 = torch.zeros((n_batch, n_token, self.n_layer, 1, self.n_head, self.kernel_size),
                              device=kernel.device)
-        t00100[..., self.kernel_size // 2] = 10.
+        if self.sum_to_one:
+            t00100[..., self.kernel_size // 2] = 10. * self.temperature
+        else:
+            t00100[..., self.kernel_size // 2] = 1.
         if self.to_be_convolved == "k":
             kernel = torch.cat((kernel[:, :, :, 0:1, :, :], t00100), dim=3)
         elif self.to_be_convolved == "v":
@@ -133,7 +140,7 @@ class TwikerModel(nn.Module):
 
         # sum to one
         if self.sum_to_one:
-            kernel = torch.softmax(kernel, dim=-1)
+            kernel = torch.softmax(kernel / self.temperature, dim=-1)
 
         # mm
         kernel = kernel.to(dtype=kv.dtype, device=kv.device)
