@@ -116,19 +116,21 @@ class GPT2Config(PretrainedConfig):
             Whether to activate TWIKER.
         twiker_kernel_size (`int`, *optional*, defaults to `3`):
             Kernel size of TWIKER.
-        twiker_sum_to_one (`bool`, *optional*, defaults to `False`):
-            Whether to make TWIKER sum to one.
-        twiker_to_be_convovled (`string`, *optional*, defaults to `kv`):
+        twiker_to_be_convovled (`string`, *optional*, defaults to `v`):
             Whether to consider TWIKER for key or value or both.
+        twiker_softmax (`bool`, *optional*, defaults to `True`):
+            Whether to enforce TWIKER as a distribution.
+        twiker_temperature (`float`, *optional*, defaults to `1.0`):
+            Temperatue for softmax.
         twiker_head_invariant (`bool`, *optional*, defaults to `True`):
             Whether TWIKER is head-invariant.
         twiker_layer_invariant (`bool`, *optional*, defaults to `True`):
             Whether TWIKER is layer-invariant.
-        twiker_casual_handling (`str`, *optional*, defaults to `"none"`):
+        twiker_casual_handling (`str`, *optional*, defaults to `"shrink_near_boundary"`):
             How TWIKER handles casual masking; must be chosen from
             `["none", "only_left_half", "truncate_near_boundary", "shrink_near_boundary"]`.
-        twiker_temperature (`float`, *optional*, defaults to `1.0`):
-            Temperatue for softmax.
+        twiker_only_first_layer (`bool`, *optional*, defaults to `True`):
+            Whether to consider TWIKER only in the first layer.
     Example:
 
     ```python
@@ -180,12 +182,13 @@ class GPT2Config(PretrainedConfig):
         reorder_and_upcast_attn=False,
         twiker_activated=False,
         twiker_kernel_size=3,
-        twiker_sum_to_one=False,
-        twiker_to_be_convolved="kv",
+        twiker_to_be_convolved="v",
+        twiker_softmax=True,
+        twiker_temperature=1.0,
         twiker_head_invariant=True,
         twiker_layer_invariant=True,
-        twiker_casual_handling="none",
-        twiker_temperature=1.0,
+        twiker_casual_handling="shrink_near_boundary",
+        twiker_only_first_layer=True,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -216,12 +219,13 @@ class GPT2Config(PretrainedConfig):
         # twiker
         self.twiker_activated = twiker_activated
         self.twiker_kernel_size = twiker_kernel_size
-        self.twiker_sum_to_one = twiker_sum_to_one
         self.twiker_to_be_convolved = twiker_to_be_convolved
+        self.twiker_softmax = twiker_softmax
+        self.twiker_temperature = twiker_temperature
         self.twiker_head_invariant = twiker_head_invariant
         self.twiker_layer_invariant = twiker_layer_invariant
         self.twiker_casual_handling = twiker_casual_handling
-        self.twiker_temperature = twiker_temperature
+        self.twiker_only_first_layer = twiker_only_first_layer
         super().__init__(bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs)
 
 

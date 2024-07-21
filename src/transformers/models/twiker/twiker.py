@@ -20,20 +20,21 @@ class TwikerEmbedding(nn.Embedding):
 
 class TwikerModel(nn.Module):
     def __init__(self, vocab_size: int, kernel_size: int, n_head: int, n_layer: int,
-                 sum_to_one: bool = False, to_be_convolved: str = "kv",
+                 to_be_convolved: str = "v",
+                 softmax: bool = True, temperature: float = 1.0,
                  head_invariant: bool = True, layer_invariant: bool = True,
-                 casual_handling: str = "none", temperature: float = 1.0):
+                 casual_handling: str = "shrink_near_boundary", ):
         super().__init__()
         self.vocab_size = vocab_size
         self.kernel_size = kernel_size
         self.n_head = n_head
         self.n_layer = n_layer
-        self.sum_to_one = sum_to_one
         self.to_be_convolved = to_be_convolved
+        self.softmax = softmax
+        self.temperature = temperature
         self.head_invariant = head_invariant
         self.layer_invariant = layer_invariant
         self.casual_handling = casual_handling
-        self.temperature = temperature
 
         # verify arguments
         assert kernel_size % 2 == 1, "Kernel size must be odd."
@@ -57,7 +58,7 @@ class TwikerModel(nn.Module):
         # initialize weights: 00100
         p = self.kernel_size // 2
         self.embedding.weight.data.fill_(0.)
-        if self.sum_to_one:
+        if self.softmax:
             self.embedding.weight.data.view(weight_shape)[..., p].fill_(10. * self.temperature)
         else:
             self.embedding.weight.data.view(weight_shape)[..., p].fill_(1.)
@@ -91,7 +92,7 @@ class TwikerModel(nn.Module):
         # handle kv, k, v
         t00100 = torch.zeros((n_batch, n_token, self.n_layer, 1, self.n_head, self.kernel_size),
                              device=kernel.device)
-        if self.sum_to_one:
+        if self.softmax:
             t00100[..., self.kernel_size // 2] = 10. * self.temperature
         else:
             t00100[..., self.kernel_size // 2] = 1.
@@ -138,8 +139,8 @@ class TwikerModel(nn.Module):
             else:
                 pass  # self.casual_handling == "none"
 
-        # sum to one
-        if self.sum_to_one:
+        # softmax
+        if self.softmax:
             kernel = torch.softmax(kernel / self.temperature, dim=-1)
 
         # mm

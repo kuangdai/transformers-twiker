@@ -972,17 +972,19 @@ class GPT2Model(GPT2PreTrainedModel):
 
         # ====================================== twiker ====================================== #
         self.twiker_model = None
+        self.twiker_only_first_layer = config.twiker_only_first_layer
         if config.twiker_activated:
+            n_layer = 1 if config.twiker_only_first_layer else config.num_hidden_layers
             self.twiker_model = TwikerModel(vocab_size=config.vocab_size,
                                             kernel_size=config.twiker_kernel_size,
                                             n_head=config.num_attention_heads,
-                                            n_layer=config.num_hidden_layers,
-                                            sum_to_one=config.twiker_sum_to_one,
+                                            n_layer=n_layer,
                                             to_be_convolved=config.twiker_to_be_convolved,
+                                            softmax=config.twiker_softmax,
+                                            temperature=config.twiker_temperature,
                                             head_invariant=config.twiker_head_invariant,
                                             layer_invariant=config.twiker_layer_invariant,
-                                            casual_handling=config.twiker_casual_handling,
-                                            temperature=config.twiker_temperature)
+                                            casual_handling=config.twiker_casual_handling)
         # ====================================== twiker ====================================== #
 
         # Initialize weights and apply final processing
@@ -1196,7 +1198,8 @@ class GPT2Model(GPT2PreTrainedModel):
             # ====================================== twiker ====================================== #
             twiker_inputs = None
             if self.twiker_activated:
-                twiker_inputs = (self.twiker_model, twiker_kernel_all_layers[:, :, i])
+                if (self.twiker_only_first_layer and i == 0) or not self.twiker_only_first_layer:
+                    twiker_inputs = (self.twiker_model, twiker_kernel_all_layers[:, :, i])
             # ====================================== twiker ====================================== #
 
             if self.gradient_checkpointing and self.training:
