@@ -126,8 +126,8 @@ class GPT2Config(PretrainedConfig):
             Whether TWIKER is head-invariant.
         twiker_layer_invariant (`bool`, *optional*, defaults to `True`):
             Whether TWIKER is layer-invariant.
-        twiker_casual_handling (`str`, *optional*, defaults to `"shrink_near_boundary"`):
-            How TWIKER handles casual masking; must be chosen from
+        twiker_causal_handling (`str`, *optional*, defaults to `"shrink_near_boundary"`):
+            How TWIKER handles causal masking; must be chosen from
             `["none", "only_left_half", "truncate_near_boundary", "shrink_near_boundary"]`.
         twiker_only_first_layer (`bool`, *optional*, defaults to `True`):
             Whether to consider TWIKER only in the first layer.
@@ -187,7 +187,7 @@ class GPT2Config(PretrainedConfig):
         twiker_temperature=1.0,
         twiker_head_invariant=True,
         twiker_layer_invariant=True,
-        twiker_casual_handling="shrink_near_boundary",
+        twiker_causal_handling="shrink_near_boundary",
         twiker_only_first_layer=True,
         **kwargs,
     ):
@@ -224,7 +224,7 @@ class GPT2Config(PretrainedConfig):
         self.twiker_temperature = twiker_temperature
         self.twiker_head_invariant = twiker_head_invariant
         self.twiker_layer_invariant = twiker_layer_invariant
-        self.twiker_casual_handling = twiker_casual_handling
+        self.twiker_causal_handling = twiker_causal_handling
         self.twiker_only_first_layer = twiker_only_first_layer
         super().__init__(bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs)
 

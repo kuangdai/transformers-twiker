@@ -197,14 +197,14 @@ class GPT2Attention(nn.Module):
         self.pruned_heads = self.pruned_heads.union(heads)
 
     def _attn(self, query, key, value, attention_mask=None, head_mask=None,
-              twiker_casual_boundary_keys_values=None):
+              twiker_causal_boundary_keys_values=None):
         attn_weights = torch.matmul(query, key.transpose(-1, -2))
 
         # ====================================== twiker ====================================== #
-        if twiker_casual_boundary_keys_values is not None:
-            attn_weights = TwikerModel.correct_attn_weights_near_casual_boundary(
+        if twiker_causal_boundary_keys_values is not None:
+            attn_weights = TwikerModel.correct_attn_weights_near_causal_boundary(
                 attn_weights=attn_weights, query=query,
-                casual_boundary_keys=twiker_casual_boundary_keys_values[0])
+                causal_boundary_keys=twiker_causal_boundary_keys_values[0])
         # ====================================== twiker ====================================== #
 
         if self.scale_attn_weights:
@@ -243,16 +243,16 @@ class GPT2Attention(nn.Module):
         attn_output = torch.matmul(attn_weights, value)
 
         # ====================================== twiker ====================================== #
-        if twiker_casual_boundary_keys_values is not None:
-            attn_output = TwikerModel.correct_attn_output_near_casual_boundary(
+        if twiker_causal_boundary_keys_values is not None:
+            attn_output = TwikerModel.correct_attn_output_near_causal_boundary(
                 attn_output=attn_output, attn_weights=attn_weights, value=value,
-                casual_boundary_values=twiker_casual_boundary_keys_values[1])
+                causal_boundary_values=twiker_causal_boundary_keys_values[1])
         # ====================================== twiker ====================================== #
 
         return attn_output, attn_weights
 
     def _upcast_and_reordered_attn(self, query, key, value, attention_mask=None, head_mask=None,
-                                   twiker_casual_boundary_keys_values=None):
+                                   twiker_causal_boundary_keys_values=None):
         # Use `torch.baddbmm` (a bit more efficient w/ alpha param for scaling -- from Megatron-LM)
         bsz, num_heads, q_seq_len, dk = query.size()
         _, _, k_seq_len, _ = key.size()
@@ -275,10 +275,10 @@ class GPT2Attention(nn.Module):
             attn_weights = attn_weights.reshape(bsz, num_heads, q_seq_len, k_seq_len)
 
         # ====================================== twiker ====================================== #
-        if twiker_casual_boundary_keys_values is not None:
-            attn_weights = TwikerModel.correct_attn_weights_near_casual_boundary(
+        if twiker_causal_boundary_keys_values is not None:
+            attn_weights = TwikerModel.correct_attn_weights_near_causal_boundary(
                 attn_weights=attn_weights, query=query,
-                casual_boundary_keys=twiker_casual_boundary_keys_values[0])
+                causal_boundary_keys=twiker_causal_boundary_keys_values[0])
         # ====================================== twiker ====================================== #
 
         if not self.is_cross_attention:
@@ -310,10 +310,10 @@ class GPT2Attention(nn.Module):
         attn_output = torch.matmul(attn_weights, value)
 
         # ====================================== twiker ====================================== #
-        if twiker_casual_boundary_keys_values is not None:
-            attn_output = TwikerModel.correct_attn_output_near_casual_boundary(
+        if twiker_causal_boundary_keys_values is not None:
+            attn_output = TwikerModel.correct_attn_output_near_causal_boundary(
                 attn_output=attn_output, attn_weights=attn_weights, value=value,
-                casual_boundary_values=twiker_casual_boundary_keys_values[1])
+                causal_boundary_values=twiker_causal_boundary_keys_values[1])
         # ====================================== twiker ====================================== #
 
         return attn_output, attn_weights
@@ -364,7 +364,7 @@ class GPT2Attention(nn.Module):
         value = self._split_heads(value, self.num_heads, self.head_dim)
 
         # ====================================== twiker ====================================== #
-        twiker_casual_boundary_keys_values = None
+        twiker_causal_boundary_keys_values = None
         if twiker_inputs is not None:
             # check user-passed mask, only allowing past_key_value masking
             if attention_mask is not None:
@@ -374,10 +374,10 @@ class GPT2Attention(nn.Module):
 
             # convolution
             twiker_model, twiker_kernel = twiker_inputs
-            key, value, casual_boundary_keys, casual_boundary_values = twiker_model.conv_key_value(
-                key, value, twiker_kernel, for_casual=not self.is_cross_attention)
-            if casual_boundary_keys is not None:
-                twiker_casual_boundary_keys_values = (casual_boundary_keys, casual_boundary_values)
+            key, value, causal_boundary_keys, causal_boundary_values = twiker_model.conv_key_value(
+                key, value, twiker_kernel, for_causal=not self.is_cross_attention)
+            if causal_boundary_keys is not None:
+                twiker_causal_boundary_keys_values = (causal_boundary_keys, causal_boundary_values)
         # ====================================== twiker ====================================== #
 
         if layer_past is not None:
@@ -394,10 +394,10 @@ class GPT2Attention(nn.Module):
 
         if self.reorder_and_upcast_attn:
             attn_output, attn_weights = self._upcast_and_reordered_attn(query, key, value, attention_mask, head_mask,
-                                                                        twiker_casual_boundary_keys_values)
+                                                                        twiker_causal_boundary_keys_values)
         else:
             attn_output, attn_weights = self._attn(query, key, value, attention_mask, head_mask,
-                                                   twiker_casual_boundary_keys_values)
+                                                   twiker_causal_boundary_keys_values)
 
         attn_output = self._merge_heads(attn_output, self.num_heads, self.head_dim)
         attn_output = self.c_proj(attn_output)
@@ -984,7 +984,7 @@ class GPT2Model(GPT2PreTrainedModel):
                                             temperature=config.twiker_temperature,
                                             head_invariant=config.twiker_head_invariant,
                                             layer_invariant=config.twiker_layer_invariant,
-                                            casual_handling=config.twiker_casual_handling)
+                                            causal_handling=config.twiker_causal_handling)
         # ====================================== twiker ====================================== #
 
         # Initialize weights and apply final processing

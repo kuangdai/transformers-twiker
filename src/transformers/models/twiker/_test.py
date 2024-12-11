@@ -11,8 +11,8 @@
 #     ker_k = ker_uni_k.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(B, N, H, K)
 #     ker_v = ker_uni_v.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(B, N, H, K)
 #     ker = torch.cat((ker_k, ker_v), dim=2)
-#     emb = TwikerModel(V, K, H, 1, casual_handling="shrink_near_boundary")
-#     k1, v1, _, _ = emb.conv_key_value(k, v, ker, for_casual=False)
+#     emb = TwikerModel(V, K, H, 1, causal_handling="shrink_near_boundary")
+#     k1, v1, _, _ = emb.conv_key_value(k, v, ker, for_causal=False)
 #
 #     # by conv
 #     ker_kc = ker_uni_k.unsqueeze(0).unsqueeze(0).unsqueeze(-1).expand(H, 1, K, 1)
@@ -23,7 +23,7 @@
 #     print((v1 - v2).abs().max())
 #
 #     # by TwikerModel
-#     k1, v1, ck, cv = emb.conv_key_value(k, v, ker, for_casual=True)
+#     k1, v1, ck, cv = emb.conv_key_value(k, v, ker, for_causal=True)
 #     print((k1 - k2).abs().max())
 #     print((v1 - v2).abs().max())
 #
@@ -61,7 +61,7 @@
 #             att_w_manual[:, :, i_query, past + i_key] = torch.matmul(q, k.transpose(-1, -2)).squeeze()
 #
 #     # fast correction
-#     att_w_fast = emb.correct_attn_weights_near_casual_boundary(att_w, query_, ck)
+#     att_w_fast = emb.correct_attn_weights_near_causal_boundary(att_w, query_, ck)
 #     print((att_w_manual - att_w_fast).abs().max())
 #
 #     # mask
@@ -85,7 +85,7 @@
 #             att_o_manual[:, :, i_query, :] += w[:, :, None] * value_diff
 #
 #     # fast correction
-#     att_o_fast = emb.correct_attn_output_near_casual_boundary(att_o, att_w_fast, value_, cv)
+#     att_o_fast = emb.correct_attn_output_near_causal_boundary(att_o, att_w_fast, value_, cv)
 #     print((att_o_manual - att_o_fast).abs().max())
 #     print("************")
 #     print("************")
@@ -107,7 +107,7 @@
 #                     conv_value[b, h, n] += kernel_v[b, n, h, k + pp] * value_[b, h, n + k]
 #
 #     conv_key1, conv_value1, cb_key1, cb_value1 = emb.conv_key_value(
-#         key_, value_, torch.cat((kernel_k, kernel_v), dim=2), for_casual=True)
+#         key_, value_, torch.cat((kernel_k, kernel_v), dim=2), for_causal=True)
 #     print((conv_key1 - conv_key).max().abs())
 #     print((conv_value1 - conv_value).max().abs())
 #     print("************")
@@ -136,7 +136,7 @@
 #                                                           key_[b, h, nn + k]).sum()
 #
 #     att_w1 = torch.matmul(query_, conv_key1.transpose(-1, -2))
-#     att_w1_cb = emb.correct_attn_weights_near_casual_boundary(att_w1, query_, cb_key1)
+#     att_w1_cb = emb.correct_attn_weights_near_causal_boundary(att_w1, query_, cb_key1)
 #     print((att_w1 - att_w).max().abs())
 #     print((att_w1_cb - att_w_cb).max().abs())
 #
@@ -161,6 +161,6 @@
 #                                                          value_[b, h, nn + k])
 #
 #     att_o1 = torch.matmul(att_w1, conv_value1)
-#     att_o1_cb = emb.correct_attn_output_near_casual_boundary(att_o1, att_w1, conv_value1, cb_value1)
+#     att_o1_cb = emb.correct_attn_output_near_causal_boundary(att_o1, att_w1, conv_value1, cb_value1)
 #     print((att_o1 - att_o).max().abs())
 #     print((att_o1_cb - att_o_cb).max().abs())
