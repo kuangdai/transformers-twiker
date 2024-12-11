@@ -954,6 +954,8 @@ DEPARALLELIZE_DOCSTRING = r"""
 class GPT2Model(GPT2PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
+        if config.twiker_activated:
+            config._attn_implementation = "eager"
 
         self.embed_dim = config.hidden_size
 
@@ -985,7 +987,6 @@ class GPT2Model(GPT2PreTrainedModel):
                                             head_invariant=config.twiker_head_invariant,
                                             layer_invariant=config.twiker_layer_invariant,
                                             causal_handling=config.twiker_causal_handling)
-            self._attn_implementation = config._attn_implementation = "eager"
         # ====================================== twiker ====================================== #
 
         # Initialize weights and apply final processing
