@@ -985,6 +985,7 @@ class GPT2Model(GPT2PreTrainedModel):
                                             head_invariant=config.twiker_head_invariant,
                                             layer_invariant=config.twiker_layer_invariant,
                                             causal_handling=config.twiker_causal_handling)
+            self._attn_implementation = config._attn_implementation = "eager"
         # ====================================== twiker ====================================== #
 
         # Initialize weights and apply final processing
