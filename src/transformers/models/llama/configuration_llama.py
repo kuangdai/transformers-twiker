@@ -99,6 +99,26 @@ class LlamaConfig(PretrainedConfig):
         attention_dropout (`float`, *optional*, defaults to 0.0):
             The dropout ratio for the attention probabilities.
 
+        twiker_activated (`bool`, *optional*, defaults to `False`):
+            Whether to activate TWIKER.
+        twiker_kernel_size (`int`, *optional*, defaults to `3`):
+            Kernel size of TWIKER.
+        twiker_to_be_convovled (`string`, *optional*, defaults to `v`):
+            Whether to consider TWIKER for key or value or both.
+        twiker_softmax (`bool`, *optional*, defaults to `True`):
+            Whether to enforce TWIKER as a distribution.
+        twiker_temperature (`float`, *optional*, defaults to `1.0`):
+            Temperatue for softmax.
+        twiker_head_invariant (`bool`, *optional*, defaults to `True`):
+            Whether TWIKER is head-invariant.
+        twiker_layer_invariant (`bool`, *optional*, defaults to `True`):
+            Whether TWIKER is layer-invariant.
+        twiker_causal_handling (`str`, *optional*, defaults to `"shrink_near_boundary"`):
+            How TWIKER handles causal masking; must be chosen from
+            `["none", "only_left_half", "truncate_near_boundary", "shrink_near_boundary"]`.
+        twiker_only_first_layer (`bool`, *optional*, defaults to `True`):
+            Whether to consider TWIKER only in the first layer.
+
     ```python
     >>> from transformers import LlamaModel, LlamaConfig
 
@@ -137,6 +157,15 @@ class LlamaConfig(PretrainedConfig):
         rope_scaling=None,
         attention_bias=False,
         attention_dropout=0.0,
+        twiker_activated=False,
+        twiker_kernel_size=3,
+        twiker_to_be_convolved="v",
+        twiker_softmax=True,
+        twiker_temperature=1.0,
+        twiker_head_invariant=True,
+        twiker_layer_invariant=True,
+        twiker_causal_handling="shrink_near_boundary",
+        twiker_only_first_layer=True,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -161,6 +190,17 @@ class LlamaConfig(PretrainedConfig):
         self._rope_scaling_validation()
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
+
+        # twiker
+        self.twiker_activated = twiker_activated
+        self.twiker_kernel_size = twiker_kernel_size
+        self.twiker_to_be_convolved = twiker_to_be_convolved
+        self.twiker_softmax = twiker_softmax
+        self.twiker_temperature = twiker_temperature
+        self.twiker_head_invariant = twiker_head_invariant
+        self.twiker_layer_invariant = twiker_layer_invariant
+        self.twiker_causal_handling = twiker_causal_handling
+        self.twiker_only_first_layer = twiker_only_first_layer
 
         super().__init__(
             pad_token_id=pad_token_id,

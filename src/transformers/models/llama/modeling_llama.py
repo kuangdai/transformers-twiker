@@ -55,6 +55,7 @@ if is_flash_attn_2_available():
     from flash_attn import flash_attn_func, flash_attn_varlen_func
     from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input  # noqa
 
+from ..twiker.twiker import TwikerModel
 
 logger = logging.get_logger(__name__)
 
@@ -326,6 +327,7 @@ class LlamaAttention(nn.Module):
         output_attentions: bool = False,
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
+        twiker_inputs: Optional[Tuple[TwikerModel, torch.FloatTensor]] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         bsz, q_len, _ = hidden_states.size()
@@ -368,7 +370,27 @@ class LlamaAttention(nn.Module):
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
 
+
+        # ====================================== twiker ====================================== #
+        twiker_causal_boundary_keys_values = None
+        if twiker_inputs is not None:
+            # convolution
+            twiker_model, twiker_kernel = twiker_inputs
+            key_states, value_states, causal_boundary_keys, causal_boundary_values = twiker_model.conv_key_value(
+                key_states, value_states, twiker_kernel, for_causal=True)
+            if causal_boundary_keys is not None:
+                twiker_causal_boundary_keys_values = (causal_boundary_keys, causal_boundary_values)
+        # ====================================== twiker ====================================== #
+
+
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
+
+        # ====================================== twiker ====================================== #
+        if twiker_causal_boundary_keys_values is not None:
+            attn_weights = TwikerModel.correct_attn_weights_near_causal_boundary(
+                attn_weights=attn_weights, query=query_states,
+                causal_boundary_keys=twiker_causal_boundary_keys_values[0])
+        # ====================================== twiker ====================================== #
 
         if attention_mask is not None:  # no matter the length, we just slice it
             causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
@@ -378,6 +400,13 @@ class LlamaAttention(nn.Module):
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
         attn_output = torch.matmul(attn_weights, value_states)
+
+        # ====================================== twiker ====================================== #
+        if twiker_causal_boundary_keys_values is not None:
+            attn_output = TwikerModel.correct_attn_output_near_causal_boundary(
+                attn_output=attn_output, attn_weights=attn_weights, value=value_states,
+                causal_boundary_values=twiker_causal_boundary_keys_values[1])
+        # ====================================== twiker ====================================== #
 
         if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
             raise ValueError(
@@ -426,8 +455,12 @@ class LlamaFlashAttention2(LlamaAttention):
         output_attentions: bool = False,
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
+        twiker_inputs: Optional[Tuple[TwikerModel, torch.FloatTensor]] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+        if twiker_inputs is not None:
+            raise NotImplementedError("Twiker is not implemented for flash attention.")
+
         output_attentions = False
 
         bsz, q_len, _ = hidden_states.size()
@@ -614,7 +647,12 @@ class LlamaSdpaAttention(LlamaAttention):
         output_attentions: bool = False,
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
+        twiker_inputs: Optional[Tuple[TwikerModel, torch.FloatTensor]] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+
+        if twiker_inputs is not None:
+            raise NotImplementedError("Twiker is not implemented for Sdpa attention.")
+
         if output_attentions:
             # TODO: Improve this warning with e.g. `model.config.attn_implementation = "manual"` once this is implemented.
             logger.warning_once(
@@ -710,6 +748,7 @@ class LlamaDecoderLayer(nn.Module):
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
         cache_position: Optional[torch.LongTensor] = None,
+        twiker_inputs: Optional[Tuple[TwikerModel, torch.FloatTensor]] = None,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         """
@@ -744,6 +783,7 @@ class LlamaDecoderLayer(nn.Module):
             output_attentions=output_attentions,
             use_cache=use_cache,
             cache_position=cache_position,
+            twiker_inputs=twiker_inputs,
             **kwargs,
         )
         hidden_states = residual + hidden_states
@@ -917,6 +957,11 @@ class LlamaModel(LlamaPreTrainedModel):
 
     def __init__(self, config: LlamaConfig):
         super().__init__(config)
+
+        if config.twiker_activated:
+            config._attn_implementation = "eager"
+
+
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
@@ -927,14 +972,41 @@ class LlamaModel(LlamaPreTrainedModel):
         self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.gradient_checkpointing = False
 
+        # ====================================== twiker ====================================== #
+        self.twiker_model = None
+        self.twiker_only_first_layer = config.twiker_only_first_layer
+        if config.twiker_activated:
+            n_layer = 1 if config.twiker_only_first_layer else config.num_hidden_layers
+            self.twiker_model = TwikerModel(vocab_size=config.vocab_size,
+                                            kernel_size=config.twiker_kernel_size,
+                                            n_head=config.num_attention_heads,
+                                            n_layer=n_layer,
+                                            to_be_convolved=config.twiker_to_be_convolved,
+                                            softmax=config.twiker_softmax,
+                                            temperature=config.twiker_temperature,
+                                            head_invariant=config.twiker_head_invariant,
+                                            layer_invariant=config.twiker_layer_invariant,
+                                            causal_handling=config.twiker_causal_handling)
+
+
+        # ====================================== twiker ====================================== #
+
         # Initialize weights and apply final processing
         self.post_init()
+
+        if config.twiker_activated:
+            self.twiker_model.embedding = self.twiker_model.embedding.to(device=self.layers[0].self_attn.q_proj.weight.device)
+
 
     def get_input_embeddings(self):
         return self.embed_tokens
 
     def set_input_embeddings(self, value):
         self.embed_tokens = value
+
+    @property
+    def twiker_activated(self):
+        return self.twiker_model is not None
 
     @add_start_docstrings_to_model_forward(LLAMA_INPUTS_DOCSTRING)
     def forward(
@@ -999,9 +1071,22 @@ class LlamaModel(LlamaPreTrainedModel):
         all_self_attns = () if output_attentions else None
         next_decoder_cache = None
 
-        for decoder_layer in self.layers:
+        # ====================================== twiker ====================================== #
+        twiker_kernel_all_layers = None
+        if self.twiker_activated:
+            twiker_kernel_all_layers = self.twiker_model.get_kernel(input_ids)
+        # ====================================== twiker ====================================== #
+
+        for i, decoder_layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
+
+            # ====================================== twiker ====================================== #
+            twiker_inputs = None
+            if self.twiker_activated:
+                if (self.twiker_only_first_layer and i == 0) or not self.twiker_only_first_layer:
+                    twiker_inputs = (self.twiker_model, twiker_kernel_all_layers[:, :, i])
+            # ====================================== twiker ====================================== #
 
             if self.gradient_checkpointing and self.training:
                 layer_outputs = self._gradient_checkpointing_func(
@@ -1013,6 +1098,7 @@ class LlamaModel(LlamaPreTrainedModel):
                     output_attentions,
                     use_cache,
                     cache_position,
+                    twiker_inputs=twiker_inputs,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -1023,6 +1109,7 @@ class LlamaModel(LlamaPreTrainedModel):
                     output_attentions=output_attentions,
                     use_cache=use_cache,
                     cache_position=cache_position,
+                    twiker_inputs=twiker_inputs,
                 )
 
             hidden_states = layer_outputs[0]
